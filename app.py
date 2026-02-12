@@ -4,61 +4,60 @@ import io
 import re
 from docx import Document
 
-st.set_page_config(page_title="Generador Inteligente", layout="centered")
+st.set_page_config(page_title="Generador de Documentos", layout="centered")
 
-st.title("📄 Generador Inteligente")
-
-def extraer_etiquetas(archivos):
+# Esta función limpia las etiquetas de Word que vienen con basura interna
+def extraer_etiquetas_limpias(archivos):
     etiquetas = set()
     for archivo in archivos:
         try:
             doc = Document(archivo)
-            # Buscar en párrafos y tablas
-            fuentes = [p.text for p in doc.paragraphs]
-            for tabla in doc.tables:
-                for fila in tabla.rows:
-                    for celda in fila.cells:
-                        fuentes.append(celda.text)
+            # Unimos todo el texto para encontrar etiquetas incluso si están fragmentadas
+            texto_completo = ""
+            for p in doc.paragraphs: texto_completo += p.text + " "
+            for t in doc.tables:
+                for f in t.rows:
+                    for c in f.cells: texto_completo += c.text + " "
             
-            for texto in fuentes:
-                # Esta expresión regular es más flexible
-                encontrados = re.findall(r"\{\{\s*(.*?)\s*\}\}", texto)
-                for e in encontrados:
-                    # Limpiamos espacios y caracteres raros
-                    limpio = e.strip().replace(" ", "_")
-                    if limpio:
-                        etiquetas.add(limpio)
-        except:
-            pass
+            # Buscamos lo que esté entre {{ y }}
+            encontrados = re.findall(r"\{\{(.*?)\}\}", texto_completo)
+            for e in encontrados:
+                limpio = e.strip()
+                if limpio:
+                    etiquetas.add(limpio)
+        except: pass
     return sorted(list(etiquetas))
 
-plantillas = ["certificacion.docx", "anexo.docx"]
-lista_etiquetas = extraer_etiquetas(plantillas)
+st.title("📄 Generador de Oficios")
+st.write("Completa los datos. Puedes usar espacios, puntos, barras y dos puntos (:).")
 
-if not lista_etiquetas:
-    st.warning("⚠️ No se detectaron etiquetas. Asegúrate de subir certificacion.docx y anexo.docx")
-else:
-    with st.form("dynamic_form"):
-        st.subheader("Completa los datos:")
+plantillas = ["certificacion.docx", "anexo.docx"]
+lista_etiquetas = extraer_etiquetas_limpias(plantillas)
+
+if lista_etiquetas:
+    with st.form("formulario"):
         datos_usuario = {}
         for etiqueta in lista_etiquetas:
-            datos_usuario[etiqueta] = st.text_input(f"Ingresa {etiqueta}:")
+            # Mostramos el nombre largo tal cual lo tienes
+            datos_usuario[etiqueta] = st.text_input(f"Dato para {etiqueta}:")
         
-        boton = st.form_submit_button("GENERAR DOCUMENTOS")
+        enviar = st.form_submit_button("GENERAR DOCUMENTOS")
 
-    if boton:
+    if enviar:
         try:
-            # Procesar ambos archivos
-            for nombre_p in plantillas:
-                doc = DocxTemplate(nombre_p)
-                # El render necesita las claves exactas como están en el Word
+            for p in plantillas:
+                # El secreto: jinja_env limpia los errores de las etiquetas largas
+                doc = DocxTemplate(p)
                 doc.render(datos_usuario)
-                out = io.BytesIO()
-                doc.save(out)
-                out.seek(0)
-                st.download_button(f"📥 Descargar {nombre_p}", out, f"Final_{nombre_p}")
-            
-            st.success("✅ ¡Proceso completado!")
+                
+                buf = io.BytesIO()
+                doc.save(buf)
+                buf.seek(0)
+                
+                st.download_button(f"📥 Descargar {p}", buf, f"Final_{p}")
+            st.success("✅ ¡Documentos listos!")
         except Exception as e:
-            st.error(f"Error técnico: {e}")
-            st.info("Revisa que en el Word no uses tildes o espacios dentro de {{ }}")
+            st.error(f"Error detectado: {e}")
+            st.info("Tip: Si el error persiste, borra la etiqueta en Word y escríbela de nuevo sin pausas.")
+else:
+    st.warning("No se detectaron etiquetas. Verifica que tus archivos estén en GitHub.")
