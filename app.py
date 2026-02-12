@@ -46,7 +46,7 @@ def reemplazar_seguro(doc, datos):
                             p_celda.text = p_celda.text.replace(buscar, valor)
 
 st.title("📄 DATOS DEL CLIENTE")
-st.write("Versión Corregida: Reemplazo Total")
+st.write("certificacion de ingresos")
 
 plantillas = ["certificacion.docx", "anexo.docx"]
 lista_unica = extraer_etiquetas_sin_repetir(plantillas)
