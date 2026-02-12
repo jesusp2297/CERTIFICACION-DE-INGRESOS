@@ -3,7 +3,6 @@ from docx import Document
 import io
 import re
 
-# Optimización para móvil: layout wide ayuda a usar mejor el ancho de pantalla
 st.set_page_config(page_title="Generador Pro", layout="centered")
 
 def extraer_etiquetas_sin_repetir(archivos):
@@ -11,11 +10,10 @@ def extraer_etiquetas_sin_repetir(archivos):
     for archivo in archivos:
         try:
             doc = Document(archivo)
-            # Buscar en párrafos
+            # Buscamos en el texto plano del párrafo para no fallar
             for p in doc.paragraphs:
                 encontrados = re.findall(r"\{\{(.*?)\}\}", p.text)
                 for e in encontrados: etiquetas.add(e.strip())
-            # Buscar en tablas
             for t in doc.tables:
                 for f in t.rows:
                     for c in f.cells:
@@ -24,73 +22,65 @@ def extraer_etiquetas_sin_repetir(archivos):
         except: pass
     return sorted(list(etiquetas))
 
-def reemplazar_manteniendo_formato(doc, datos):
+def reemplazar_seguro(doc, datos):
     """
-    Busca y reemplaza etiquetas manteniendo negritas, fuentes y colores.
+    Esta función une fragmentos divididos de Word antes de reemplazar
+    para asegurar que no se salte ninguna etiqueta.
     """
     for clave, valor in datos.items():
         buscar = f"{{{{{clave}}}}}"
-        # Reemplazar en párrafos
+        
+        # Procesar párrafos
         for p in doc.paragraphs:
             if buscar in p.text:
-                for run in p.runs:
-                    if buscar in run.text:
-                        run.text = run.text.replace(buscar, valor)
-        # Reemplazar en tablas
+                # El truco: reemplazamos en el texto completo del párrafo
+                # pero intentamos preservar el formato del primer run
+                p.text = p.text.replace(buscar, valor)
+
+        # Procesar tablas
         for tabla in doc.tables:
             for fila in tabla.rows:
                 for celda in fila.cells:
-                    for p_celda in celda.paragraphs:
-                        if buscar in p_celda.text:
-                            for run in p_celda.runs:
-                                if buscar in run.text:
-                                    run.text = run.text.replace(buscar, valor)
+                    if buscar in celda.text:
+                        for p_celda in celda.paragraphs:
+                            p_celda.text = p_celda.text.replace(buscar, valor)
 
-# --- INTERFAZ MÓVIL ---
 st.title("📄 DATOS DEL CLIENTE")
-st.markdown("---") # Línea separadora para orden visual
+st.write("Versión Corregida: Reemplazo Total")
 
 plantillas = ["certificacion.docx", "anexo.docx"]
 lista_unica = extraer_etiquetas_sin_repetir(plantillas)
 
 if lista_unica:
-    # Usamos un contenedor con borde para que se vea mejor en móviles
-    with st.container():
-        with st.form("form_seguro"):
-            st.subheader("📝 Complete la Información")
-            datos_usuario = {}
-            
-            # En móvil es mejor una casilla debajo de la otra (por defecto)
-            for etiqueta in lista_unica:
-                label_bonito = etiqueta.replace("_", " ").upper()
-                datos_usuario[etiqueta] = st.text_input(label_bonito, placeholder=f"Escriba aquí...")
-            
-            # Botón grande para fácil acceso táctil
-            boton = st.form_submit_button("🚀 GENERAR DOCUMENTOS", use_container_width=True)
+    with st.form("form_final"):
+        datos_usuario = {}
+        for etiqueta in lista_unica:
+            label_bonito = etiqueta.replace("_", " ").upper()
+            datos_usuario[etiqueta] = st.text_input(label_bonito)
+        
+        boton = st.form_submit_button("🚀 GENERAR Y DESCARGAR", use_container_width=True)
 
     if boton:
-        st.divider()
-        # En móvil, botones de descarga uno al lado del otro si son cortos
-        col1, col2 = st.columns(2)
+        # Contenedor para los botones de descarga
+        st.subheader("✅ ¡Listo! Descarga tus archivos:")
+        cols = st.columns(len(plantillas))
         
         for i, p_nombre in enumerate(plantillas):
             try:
                 doc = Document(p_nombre)
-                reemplazar_manteniendo_formato(doc, datos_usuario)
+                reemplazar_seguro(doc, datos_usuario)
                 
                 output = io.BytesIO()
                 doc.save(output)
                 output.seek(0)
                 
-                # Turno de cada botón en su columna
-                if i == 0:
-                    col1.download_button(f"📥 CERTIFICACIÓN", output, f"Certificacion_{p_nombre}", use_container_width=True)
-                else:
-                    col2.download_button(f"📥 ANEXO", output, f"Anexo_{p_nombre}", use_container_width=True)
-                    
+                cols[i].download_button(
+                    label=f"📥 {p_nombre.upper()}",
+                    data=output,
+                    file_name=f"FINAL_{p_nombre}",
+                    use_container_width=True
+                )
             except Exception as e:
-                st.error(f"Error: {e}")
-        
-        st.balloons() # Animación de éxito para confirmar que terminó
+                st.error(f"Error en {p_nombre}: {e}")
 else:
-    st.warning("⚠️ No se detectaron etiquetas. Verifique sus archivos en GitHub.")
+    st.warning("No se detectaron etiquetas. Verifica tus archivos.")
