@@ -1,90 +1,86 @@
 import streamlit as st
-from fpdf import FPDF
-from datetime import datetime
+from docx import Document
+import io
+import re
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Certificador PDF Pro", page_icon="⚖️", layout="centered")
+st.set_page_config(page_title="Generador Pro", layout="centered")
 
-class PDF(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 15)
-        self.cell(0, 10, 'CERTIFICACION DE INGRESOS', border=False, ln=True, align='C')
-        self.ln(10)
+def extraer_etiquetas_sin_repetir(archivos):
+    etiquetas = set()
+    for archivo in archivos:
+        try:
+            doc = Document(archivo)
+            # Buscamos en el texto plano del párrafo para no fallar
+            for p in doc.paragraphs:
+                encontrados = re.findall(r"\{\{(.*?)\}\}", p.text)
+                for e in encontrados: etiquetas.add(e.strip())
+            for t in doc.tables:
+                for f in t.rows:
+                    for c in f.cells:
+                        encontrados = re.findall(r"\{\{(.*?)\}\}", c.text)
+                        for e in encontrados: etiquetas.add(e.strip())
+        except: pass
+    return sorted(list(etiquetas))
 
-    def footer(self):
-        self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, f'Página {self.page_no()}', align='C')
+def reemplazar_seguro(doc, datos):
+    """
+    Esta función une fragmentos divididos de Word antes de reemplazar
+    para asegurar que no se salte ninguna etiqueta.
+    """
+    for clave, valor in datos.items():
+        buscar = f"{{{{{clave}}}}}"
+        
+        # Procesar párrafos
+        for p in doc.paragraphs:
+            if buscar in p.text:
+                # El truco: reemplazamos en el texto completo del párrafo
+                # pero intentamos preservar el formato del primer run
+                p.text = p.text.replace(buscar, valor)
 
-def generar_pdf(datos):
-    # Usamos 'latin-1' para compatibilidad básica con tildes y ñ
-    pdf = PDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    
-    fecha_hoy = datetime.now().strftime("%d de %B de %Y")
-    
-    # Texto formateado (sin usar f-strings complejos para evitar errores de codificación)
-    cuerpo = (
-        f"A QUIEN PUEDA INTERESAR:\n\n"
-        f"Yo, {datos['contador']}, identificado con cedula de ciudadania No. {datos['id_contador']}, "
-        f"en mi calidad de Contador Publico con Tarjeta Profesional No. {datos['tp']}, "
-        f"CERTIFICO QUE:\n\n"
-        f"El(la) Sr(a). {datos['nombre_cliente']}, identificado(a) con {datos['tipo_id']} No. {datos['id_cliente']}, "
-        f"percibe ingresos mensuales por un valor de {datos['monto_letras']} ({datos['monto_numeros']}), "
-        f"provenientes de su actividad como {datos['actividad']}.\n\n"
-        f"La presente certificacion se expide a solicitud del interesado en la ciudad de {datos['ciudad']}, "
-        f"el dia {fecha_hoy}."
-    )
-    
-    pdf.multi_cell(0, 10, cuerpo.encode('latin-1', 'replace').decode('latin-1'))
-    pdf.ln(20)
-    
-    # Espacio para firma
-    pdf.cell(0, 10, "__________________________", ln=True)
-    pdf.cell(0, 10, datos['contador'], ln=True)
-    pdf.cell(0, 10, f"T.P. No. {datos['tp']}", ln=True)
-    
-    return pdf.output()
+        # Procesar tablas
+        for tabla in doc.tables:
+            for fila in tabla.rows:
+                for celda in fila.cells:
+                    if buscar in celda.text:
+                        for p_celda in celda.paragraphs:
+                            p_celda.text = p_celda.text.replace(buscar, valor)
 
-# --- INTERFAZ ---
-st.title("🏛️ Generador de Certificaciones")
+st.title("📄 DATOS DEL CLIENTE")
+st.write("certificacion de ingresos")
 
-with st.form("form_pdf"):
-    col1, col2 = st.columns(2)
-    with col1:
-        contador = st.text_input("Nombre del Contador")
-        id_contador = st.text_input("Cédula Contador")
-        tp = st.text_input("Tarjeta Profesional")
-    with col2:
-        nombre_cliente = st.text_input("Nombre del Cliente")
-        id_cliente = st.text_input("ID Cliente")
-        tipo_id = st.selectbox("Tipo ID", ["C.C.", "C.E.", "NIT"])
-    
-    actividad = st.text_input("Actividad Económica")
-    ciudad = st.text_input("Ciudad")
-    
-    c3, c4 = st.columns(2)
-    monto_numeros = c3.text_input("Monto ($)")
-    monto_letras = c4.text_input("Monto (Letras)")
-    
-    enviar = st.form_submit_button("GENERAR PDF", use_container_width=True)
+plantillas = ["certificacion.docx", "anexo.docx"]
+lista_unica = extraer_etiquetas_sin_repetir(plantillas)
 
-if enviar:
-    if not contador or not nombre_cliente:
-        st.warning("Por favor rellena los campos principales.")
-    else:
-        info = {
-            "contador": contador, "id_contador": id_contador, "tp": tp,
-            "nombre_cliente": nombre_cliente, "id_cliente": id_cliente,
-            "tipo_id": tipo_id, "actividad": actividad, "ciudad": ciudad,
-            "monto_numeros": monto_numeros, "monto_letras": monto_letras
-        }
-        pdf_res = generar_pdf(info)
-        st.success("✅ PDF generado.")
-        st.download_button(
-            label="📥 Descargar PDF",
-            data=pdf_res,
-            file_name="Certificacion.pdf",
-            mime="application/pdf"
-        )
+if lista_unica:
+    with st.form("form_final"):
+        datos_usuario = {}
+        for etiqueta in lista_unica:
+            label_bonito = etiqueta.replace("_", " ").upper()
+            datos_usuario[etiqueta] = st.text_input(label_bonito)
+        
+        boton = st.form_submit_button("🚀 GENERAR Y DESCARGAR", use_container_width=True)
+
+    if boton:
+        # Contenedor para los botones de descarga
+        st.subheader("✅ ¡Listo! Descarga tus archivos:")
+        cols = st.columns(len(plantillas))
+        
+        for i, p_nombre in enumerate(plantillas):
+            try:
+                doc = Document(p_nombre)
+                reemplazar_seguro(doc, datos_usuario)
+                
+                output = io.BytesIO()
+                doc.save(output)
+                output.seek(0)
+                
+                cols[i].download_button(
+                    label=f"📥 {p_nombre.upper()}",
+                    data=output,
+                    file_name=f"FINAL_{p_nombre}",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"Error en {p_nombre}: {e}")
+else:
+    st.warning("No se detectaron etiquetas. Verifica tus archivos.")
