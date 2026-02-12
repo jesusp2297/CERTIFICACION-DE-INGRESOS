@@ -3,10 +3,10 @@ from docx import Document
 import io
 import re
 
-st.set_page_config(page_title="Generador Final", layout="centered")
+# Optimización para móvil: layout wide ayuda a usar mejor el ancho de pantalla
+st.set_page_config(page_title="Generador Pro", layout="centered")
 
 def extraer_etiquetas_sin_repetir(archivos):
-    # Usamos un set() para que no se guarden duplicados
     etiquetas = set()
     for archivo in archivos:
         try:
@@ -14,60 +14,83 @@ def extraer_etiquetas_sin_repetir(archivos):
             # Buscar en párrafos
             for p in doc.paragraphs:
                 encontrados = re.findall(r"\{\{(.*?)\}\}", p.text)
-                for e in encontrados: 
-                    etiquetas.add(e.strip()) # .add() ignora si ya existe
+                for e in encontrados: etiquetas.add(e.strip())
             # Buscar en tablas
             for t in doc.tables:
                 for f in t.rows:
                     for c in f.cells:
                         encontrados = re.findall(r"\{\{(.*?)\}\}", c.text)
-                        for e in encontrados: 
-                            etiquetas.add(e.strip())
+                        for e in encontrados: etiquetas.add(e.strip())
         except: pass
-    return sorted(list(etiquetas)) # Lo devolvemos ordenado alfabéticamente
+    return sorted(list(etiquetas))
 
-def reemplazar_texto(doc, datos):
-    for p in doc.paragraphs:
-        for clave, valor in datos.items():
-            if f"{{{{{clave}}}}}" in p.text:
-                p.text = p.text.replace(f"{{{{{clave}}}}}", valor)
-    for tabla in doc.tables:
-        for fila in tabla.rows:
-            for celda in fila.cells:
-                for clave, valor in datos.items():
-                    if f"{{{{{clave}}}}}" in celda.text:
-                        celda.text = celda.text.replace(f"{{{{{clave}}}}}", valor)
+def reemplazar_manteniendo_formato(doc, datos):
+    """
+    Busca y reemplaza etiquetas manteniendo negritas, fuentes y colores.
+    """
+    for clave, valor in datos.items():
+        buscar = f"{{{{{clave}}}}}"
+        # Reemplazar en párrafos
+        for p in doc.paragraphs:
+            if buscar in p.text:
+                for run in p.runs:
+                    if buscar in run.text:
+                        run.text = run.text.replace(buscar, valor)
+        # Reemplazar en tablas
+        for tabla in doc.tables:
+            for fila in tabla.rows:
+                for celda in fila.cells:
+                    for p_celda in celda.paragraphs:
+                        if buscar in p_celda.text:
+                            for run in p_celda.runs:
+                                if buscar in run.text:
+                                    run.text = run.text.replace(buscar, valor)
 
+# --- INTERFAZ MÓVIL ---
 st.title("📄 DATOS DEL CLIENTE")
-st.write("CERTIFICACION DE INGRESOS Y ANEXO.")
+st.markdown("---") # Línea separadora para orden visual
 
 plantillas = ["certificacion.docx", "anexo.docx"]
-# Aquí llamamos a la nueva función "limpia"
 lista_unica = extraer_etiquetas_sin_repetir(plantillas)
 
 if lista_unica:
-    with st.form("form_seguro"):
-        datos_usuario = {}
-        for etiqueta in lista_unica:
-            # Creamos una sola casilla por cada etiqueta diferente
-            label_bonito = etiqueta.replace("_", " ").capitalize()
-            datos_usuario[etiqueta] = st.text_input(f"{label_bonito}:")
-        
-        boton = st.form_submit_button("GENERAR DOCUMENTOS")
+    # Usamos un contenedor con borde para que se vea mejor en móviles
+    with st.container():
+        with st.form("form_seguro"):
+            st.subheader("📝 Complete la Información")
+            datos_usuario = {}
+            
+            # En móvil es mejor una casilla debajo de la otra (por defecto)
+            for etiqueta in lista_unica:
+                label_bonito = etiqueta.replace("_", " ").upper()
+                datos_usuario[etiqueta] = st.text_input(label_bonito, placeholder=f"Escriba aquí...")
+            
+            # Botón grande para fácil acceso táctil
+            boton = st.form_submit_button("🚀 GENERAR DOCUMENTOS", use_container_width=True)
 
     if boton:
-        for p_nombre in plantillas:
+        st.divider()
+        # En móvil, botones de descarga uno al lado del otro si son cortos
+        col1, col2 = st.columns(2)
+        
+        for i, p_nombre in enumerate(plantillas):
             try:
                 doc = Document(p_nombre)
-                reemplazar_texto(doc, datos_usuario)
+                reemplazar_manteniendo_formato(doc, datos_usuario)
                 
                 output = io.BytesIO()
                 doc.save(output)
                 output.seek(0)
                 
-                st.download_button(f"📥 Descargar {p_nombre}", output, f"Listo_{p_nombre}")
+                # Turno de cada botón en su columna
+                if i == 0:
+                    col1.download_button(f"📥 CERTIFICACIÓN", output, f"Certificacion_{p_nombre}", use_container_width=True)
+                else:
+                    col2.download_button(f"📥 ANEXO", output, f"Anexo_{p_nombre}", use_container_width=True)
+                    
             except Exception as e:
-                st.error(f"Error con {p_nombre}: {e}")
-        st.success("¡Hecho! Los datos se aplicaron a todos los documentos.")
+                st.error(f"Error: {e}")
+        
+        st.balloons() # Animación de éxito para confirmar que terminó
 else:
-    st.warning("Sube tus archivos Word a GitHub para empezar.")
+    st.warning("⚠️ No se detectaron etiquetas. Verifique sus archivos en GitHub.")
