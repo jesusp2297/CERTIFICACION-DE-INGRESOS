@@ -38,8 +38,8 @@ def reemplazar_texto(doc, datos):
                     if f"{{{{{clave}}}}}" in celda.text:
                         celda.text = celda.text.replace(f"{{{{{clave}}}}}", valor)
 
-st.title("📄 Generador de Documentos")
-st.write("Ahora con casillas únicas (sin repetidos).")
+st.title("📄 DATOS DEL CLIENTE")
+st.write("CERTIFICACION DE INGRESOS Y ANEXO.")
 
 plantillas = ["certificacion.docx", "anexo.docx"]
 # Aquí llamamos a la nueva función "limpia"
