@@ -4,63 +4,61 @@ import io
 import re
 from docx import Document
 
-st.set_page_config(page_title="Generador Automático", layout="centered")
+st.set_page_config(page_title="Generador Inteligente", layout="centered")
 
 st.title("📄 Generador Inteligente")
-st.write("La app detectará automáticamente los campos de tus plantillas.")
 
 def extraer_etiquetas(archivos):
     etiquetas = set()
     for archivo in archivos:
         try:
             doc = Document(archivo)
-            # Buscar en todos los párrafos
-            for p in doc.paragraphs:
-                encontrados = re.findall(r"\{\{(.*?)\}\}", p.text)
-                for e in encontrados:
-                    etiquetas.add(e.strip())
-            # Buscar en todas las tablas
+            # Buscar en párrafos y tablas
+            fuentes = [p.text for p in doc.paragraphs]
             for tabla in doc.tables:
                 for fila in tabla.rows:
                     for celda in fila.cells:
-                        encontrados = re.findall(r"\{\{(.*?)\}\}", celda.text)
-                        for e in encontrados:
-                            etiquetas.add(e.strip())
+                        fuentes.append(celda.text)
+            
+            for texto in fuentes:
+                # Esta expresión regular es más flexible
+                encontrados = re.findall(r"\{\{\s*(.*?)\s*\}\}", texto)
+                for e in encontrados:
+                    # Limpiamos espacios y caracteres raros
+                    limpio = e.strip().replace(" ", "_")
+                    if limpio:
+                        etiquetas.add(limpio)
         except:
             pass
     return sorted(list(etiquetas))
 
-# Intentar extraer etiquetas de tus archivos subidos
 plantillas = ["certificacion.docx", "anexo.docx"]
 lista_etiquetas = extraer_etiquetas(plantillas)
 
 if not lista_etiquetas:
-    st.error("No se detectaron etiquetas {{}} en los archivos. Revisa tus plantillas.")
+    st.warning("⚠️ No se detectaron etiquetas. Asegúrate de subir certificacion.docx y anexo.docx")
 else:
     with st.form("dynamic_form"):
-        st.subheader("Completa los datos detectados:")
+        st.subheader("Completa los datos:")
         datos_usuario = {}
-        
-        # Crear un campo de texto por cada etiqueta encontrada
         for etiqueta in lista_etiquetas:
-            datos_usuario[etiqueta] = st.text_input(f"Escribe: {etiqueta}")
+            datos_usuario[etiqueta] = st.text_input(f"Ingresa {etiqueta}:")
         
         boton = st.form_submit_button("GENERAR DOCUMENTOS")
 
     if boton:
         try:
-            # Procesar Certificación
-            doc1 = DocxTemplate("certificacion.docx")
-            doc1.render(datos_usuario)
-            out1 = io.BytesIO(); doc1.save(out1); out1.seek(0)
+            # Procesar ambos archivos
+            for nombre_p in plantillas:
+                doc = DocxTemplate(nombre_p)
+                # El render necesita las claves exactas como están en el Word
+                doc.render(datos_usuario)
+                out = io.BytesIO()
+                doc.save(out)
+                out.seek(0)
+                st.download_button(f"📥 Descargar {nombre_p}", out, f"Final_{nombre_p}")
             
-            # Procesar Anexo
-            doc2 = DocxTemplate("anexo.docx")
-            doc2.render(datos_usuario)
-            out2 = io.BytesIO(); doc2.save(out2); out2.seek(0)
-            
-            st.success("✅ ¡Documentos listos!")
-            st.download_button("📥 Descargar Certificación", out1, "Certificacion.docx")
-            st.download_button("📥 Descargar Anexo", out2, "Anexo.docx")
+            st.success("✅ ¡Proceso completado!")
         except Exception as e:
-            st.error(f"Error al procesar: {e}")
+            st.error(f"Error técnico: {e}")
+            st.info("Revisa que en el Word no uses tildes o espacios dentro de {{ }}")
