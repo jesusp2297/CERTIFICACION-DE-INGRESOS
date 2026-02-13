@@ -1,5 +1,7 @@
 import streamlit as st
 from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 import io
 import re
 import os
@@ -34,22 +36,61 @@ def extraer_etiquetas_fijas(nombres_archivos):
                 st.error(f"Error leyendo {nombre}: {e}")
     return sorted(list(etiquetas))
 
+def aplicar_estilo_y_reemplazo(paragraph, datos):
+    """
+    Reemplaza etiquetas en un párrafo manteniendo Arial 8 
+    y aplicando negrita a campos específicos.
+    """
+    texto_original = paragraph.text
+    if "{{" not in texto_original:
+        # Si no hay etiquetas, solo aseguramos la fuente Arial 8
+        for run in paragraph.runs:
+            run.font.name = 'Arial'
+            run.font.size = Pt(8)
+        return
+
+    # Lista de etiquetas que deben ir en negrita
+    tags_negrita = ["dirigido_a_la_institucion", "nombre", "cedula"]
+    
+    # Expresión regular para encontrar las etiquetas
+    parts = re.split(r'(\{\{.*?\}\})', texto_original)
+    
+    # Limpiamos el párrafo para reconstruirlo con el nuevo formato
+    paragraph.text = ""
+    
+    for part in parts:
+        run = paragraph.add_run()
+        # Verificar si la parte es una etiqueta {{etiqueta}}
+        tag_match = re.match(r'\{\{(.*?)\}\}', part)
+        
+        if tag_match:
+            tag_key = tag_match.group(1).strip()
+            valor = datos.get(tag_key, part)
+            run.text = valor
+            # Aplicar negrita si está en la lista
+            if tag_key in tags_negrita:
+                run.bold = True
+        else:
+            run.text = part
+            
+        # Aplicar Arial 8 a todo
+        run.font.name = 'Arial'
+        run.font.size = Pt(8)
+
 def generar_documento(nombre_plantilla, datos):
-    """Aplica los cambios a una plantilla y devuelve el buffer"""
+    """Aplica los cambios a una plantilla con Arial 8 y negritas selectivas"""
     doc = Document(nombre_plantilla)
-    for clave, valor in datos.items():
-        buscar = f"{{{{{clave}}}}}"
-        # Procesar párrafos
-        for p in doc.paragraphs:
-            if buscar in p.text:
-                p.text = p.text.replace(buscar, valor)
-        # Procesar tablas
-        for tabla in doc.tables:
-            for fila in tabla.rows:
-                for celda in fila.cells:
-                    if buscar in celda.text:
-                        for p_celda in celda.paragraphs:
-                            p_celda.text = p_celda.text.replace(buscar, valor)
+    
+    # Procesar todos los párrafos del documento
+    for p in doc.paragraphs:
+        aplicar_estilo_y_reemplazo(p, datos)
+    
+    # Procesar tablas
+    for tabla in doc.tables:
+        for fila in tabla.rows:
+            for celda in fila.cells:
+                for p_celda in celda.paragraphs:
+                    aplicar_estilo_y_reemplazo(p_celda, datos)
     
     output = io.BytesIO()
     doc.save(output)
@@ -66,7 +107,7 @@ archivos_presentes = [p for p in PLANTILLAS_CONFIG if os.path.exists(p)]
 
 if not archivos_presentes:
     st.error("❌ No se encontraron las plantillas .docx en el servidor.")
-    st.write("Asegúrate de que 'certificacion.docx' y 'anexo.docx' estén en la misma carpeta que app.py.")
+    st.write("Asegúrate de que 'certificacion.docx' y 'anexo.docx' estén en la misma carpeta.")
 else:
     # Extraer etiquetas de los archivos locales automáticamente
     lista_unica = extraer_etiquetas_fijas(archivos_presentes)
@@ -82,9 +123,8 @@ else:
             st.write("---")
             boton_generar = st.form_submit_button("🚀 GENERAR DOCUMENTOS", use_container_width=True)
 
-        # La lógica de generación debe estar al mismo nivel de indentación que el 'with st.form'
         if boton_generar:
-            st.success("✨ Documentos listos para descargar:")
+            st.success("✨ Documentos listos para descargar (Arial 8 + Negritas):")
             
             for p_nombre in archivos_presentes:
                 try:
