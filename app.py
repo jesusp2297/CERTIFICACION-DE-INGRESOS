@@ -131,7 +131,7 @@ else:
             st.write("---")
             boton_generar = st.form_submit_button("🚀 GENERAR DOCUMENTOS", use_container_width=True)
 
-        if boton_generar certificacion:
+        if boton_generar_certificacion:
             st.success("✨ Documentos listos para descargar📃:")
             
             for p_nombre in archivos_presentes:
