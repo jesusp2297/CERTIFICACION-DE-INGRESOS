@@ -36,20 +36,20 @@ def extraer_etiquetas_fijas(nombres_archivos):
                 st.error(f"Error leyendo {nombre}: {e}")
     return sorted(list(etiquetas))
 
-def aplicar_estilo_y_reemplazo(paragraph, datos):
+def aplicar_estilo_y_reemplazo(paragraph, datos, fuente_size):
     """
-    Reemplaza etiquetas en un párrafo manteniendo Arial 8 
-    y aplicando negrita a campos específicos.
+    Reemplaza etiquetas en un párrafo manteniendo Arial y el tamaño indicado,
+    aplicando negrita a campos específicos.
     """
     texto_original = paragraph.text
     if "{{" not in texto_original:
-        # Si no hay etiquetas, solo aseguramos la fuente Arial 8
+        # Si no hay etiquetas, solo aseguramos la fuente Arial y el tamaño
         for run in paragraph.runs:
             run.font.name = 'Arial'
-            run.font.size = Pt(8)
+            run.font.size = Pt(fuente_size)
         return
 
-    # Lista de etiquetas que deben ir en negrita (actualizada)
+    # Lista de etiquetas que deben ir en negrita
     tags_negrita = [
         "dirigido_a_la_institucion", 
         "nombre", 
@@ -78,24 +78,27 @@ def aplicar_estilo_y_reemplazo(paragraph, datos):
         else:
             run.text = part
             
-        # Aplicar Arial 8 a todo
+        # Aplicar Arial y el tamaño correspondiente
         run.font.name = 'Arial'
-        run.font.size = Pt(8)
+        run.font.size = Pt(fuente_size)
 
 def generar_documento(nombre_plantilla, datos):
-    """Aplica los cambios a una plantilla con Arial 8 y negritas selectivas"""
+    """Aplica los cambios a una plantilla con Arial y negritas selectivas"""
     doc = Document(nombre_plantilla)
+    
+    # Definir tamaño de fuente: 12 para anexo, 8 para el resto
+    fuente_size = 12 if "anexo" in nombre_plantilla.lower() else 8
     
     # Procesar todos los párrafos del documento
     for p in doc.paragraphs:
-        aplicar_estilo_y_reemplazo(p, datos)
+        aplicar_estilo_y_reemplazo(p, datos, fuente_size)
     
     # Procesar tablas
     for tabla in doc.tables:
         for fila in tabla.rows:
             for celda in fila.cells:
                 for p_celda in celda.paragraphs:
-                    aplicar_estilo_y_reemplazo(p_celda, datos)
+                    aplicar_estilo_y_reemplazo(p_celda, datos, fuente_size)
     
     output = io.BytesIO()
     doc.save(output)
@@ -129,14 +132,17 @@ else:
             boton_generar = st.form_submit_button("🚀 GENERAR DOCUMENTOS", use_container_width=True)
 
         if boton_generar:
-            st.success("✨ Documentos listos para descargar (Arial 8 + Negritas):")
+            st.success("✨ Documentos listos para descargar:")
             
             for p_nombre in archivos_presentes:
                 try:
                     archivo_final = generar_documento(p_nombre, datos_usuario)
                     
+                    # Mostrar info del tamaño aplicado
+                    size_info = "Arial 12" if "anexo" in p_nombre.lower() else "Arial 8"
+                    
                     st.download_button(
-                        label=f"⬇️ DESCARGAR {p_nombre.replace('.docx', '').upper()}",
+                        label=f"⬇️ DESCARGAR {p_nombre.replace('.docx', '').upper()} ({size_info})",
                         data=archivo_final,
                         file_name=f"LISTO_{p_nombre}",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -144,3 +150,5 @@ else:
                     )
                 except Exception as e:
                     st.error(f"Error al procesar {p_nombre}: {e}")
+    else:
+        st.warning("No se encontraron etiquetas {{...}} en las plantillas.")
