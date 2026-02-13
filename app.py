@@ -3,84 +3,149 @@ from docx import Document
 import io
 import re
 
+# Configuración de página
 st.set_page_config(page_title="Generador Pro", layout="centered")
 
-def extraer_etiquetas_sin_repetir(archivos):
-    etiquetas = set()
-    for archivo in archivos:
-        try:
-            doc = Document(archivo)
-            # Buscamos en el texto plano del párrafo para no fallar
-            for p in doc.paragraphs:
-                encontrados = re.findall(r"\{\{(.*?)\}\}", p.text)
-                for e in encontrados: etiquetas.add(e.strip())
-            for t in doc.tables:
-                for f in t.rows:
-                    for c in f.cells:
-                        encontrados = re.findall(r"\{\{(.*?)\}\}", c.text)
-                        for e in encontrados: etiquetas.add(e.strip())
-        except: pass
-    return sorted(list(etiquetas))
-
-def reemplazar_seguro(doc, datos):
+def extraer_etiquetas_del_doc(archivo_bytes):
     """
-    Esta función une fragmentos divididos de Word antes de reemplazar
-    para asegurar que no se salte ninguna etiqueta.
+    Lee un archivo en memoria y extrae las etiquetas {{variable}}.
+    Retorna un set de etiquetas encontradas.
+    """
+    etiquetas = set()
+    try:
+        doc = Document(archivo_bytes)
+        
+        # 1. Buscar en párrafos
+        for p in doc.paragraphs:
+            # Usamos regex para encontrar {{algo}}
+            encontrados = re.findall(r"\{\{(.*?)\}\}", p.text)
+            for e in encontrados:
+                etiquetas.add(e.strip())
+        
+        # 2. Buscar en tablas
+        for t in doc.tables:
+            for row in t.rows:
+                for cell in row.cells:
+                    # En tablas, el texto también puede estar en párrafos dentro de celdas
+                    for p in cell.paragraphs:
+                        encontrados = re.findall(r"\{\{(.*?)\}\}", p.text)
+                        for e in encontrados:
+                            etiquetas.add(e.strip())
+    except Exception as e:
+        st.error(f"Error leyendo el archivo: {e}")
+    
+    return etiquetas
+
+def reemplazar_texto(doc, datos):
+    """
+    Reemplaza las claves por valores en el documento.
+    NOTA: Al asignar p.text, se puede perder formato (negrita/color) 
+    si el estilo no estaba aplicado a todo el párrafo.
     """
     for clave, valor in datos.items():
-        buscar = f"{{{{{clave}}}}}"
+        buscar = f"{{{{{clave}}}}}" # Esto genera string "{{clave}}"
         
-        # Procesar párrafos
+        if not valor:
+            valor = "" # Evitar errores si el campo está vacío
+
+        # Reemplazo en párrafos normales
         for p in doc.paragraphs:
             if buscar in p.text:
-                # El truco: reemplazamos en el texto completo del párrafo
-                # pero intentamos preservar el formato del primer run
+                # inline=True intenta preservar mejor el estilo
                 p.text = p.text.replace(buscar, valor)
 
-        # Procesar tablas
+        # Reemplazo en tablas
         for tabla in doc.tables:
             for fila in tabla.rows:
                 for celda in fila.cells:
-                    if buscar in celda.text:
-                        for p_celda in celda.paragraphs:
-                            p_celda.text = p_celda.text.replace(buscar, valor)
+                    for p in celda.paragraphs:
+                        if buscar in p.text:
+                            p.text = p.text.replace(buscar, valor)
+    return doc
+
+# --- INTERFAZ DE USUARIO ---
 
 st.title("📄 DATOS DEL CLIENTE")
-st.write("certificacion de ingresos")
+st.markdown("""
+Sube tus plantillas de Word (`.docx`). El sistema detectará automáticamente
+las variables entre llaves dobles, por ejemplo: `{{nombre}}`, `{{cedula}}`.
+""")
 
-plantillas = ["certificacion.docx", "anexo.docx"]
-lista_unica = extraer_etiquetas_sin_repetir(plantillas)
+# 1. Widget de carga de archivos (Reemplaza las rutas fijas)
+archivos_subidos = st.file_uploader(
+    "Cargar Plantillas (.docx)", 
+    type=["docx"], 
+    accept_multiple_files=True
+)
 
-if lista_unica:
-    with st.form("form_final"):
-        datos_usuario = {}
-        for etiqueta in lista_unica:
-            label_bonito = etiqueta.replace("_", " ").upper()
-            datos_usuario[etiqueta] = st.text_input(label_bonito)
+if archivos_subidos:
+    # Set para guardar todas las etiquetas únicas de todos los archivos
+    etiquetas_globales = set()
+
+    # 2. Fase de Análisis: Extraer etiquetas
+    for archivo in archivos_subidos:
+        # Importante: seek(0) asegura que leemos desde el principio
+        archivo.seek(0) 
+        tags_doc = extraer_etiquetas_del_doc(archivo)
+        etiquetas_globales.update(tags_doc)
+
+    lista_unica = sorted(list(etiquetas_globales))
+
+    if lista_unica:
+        st.divider()
+        st.subheader("📝 Completar Información")
         
-        boton = st.form_submit_button("🚀 GENERAR Y DESCARGAR", use_container_width=True)
+        with st.form("form_final"):
+            datos_usuario = {}
+            # Crear columnas para que el formulario sea más compacto
+            cols = st.columns(2)
+            
+            for i, etiqueta in enumerate(lista_unica):
+                label_bonito = etiqueta.replace("_", " ").upper()
+                # Alternar columnas
+                col_actual = cols[i % 2]
+                datos_usuario[etiqueta] = col_actual.text_input(label_bonito)
+            
+            st.warning("⚠️ Nota: Si tu plantilla tiene palabras en **negrita** o *cursiva* justo donde está la variable, el formato podría perderse al reemplazar.")
+            boton = st.form_submit_button("🚀 GENERAR DOCUMENTOS", use_container_width=True)
 
-    if boton:
-        # Contenedor para los botones de descarga
-        st.subheader("✅ ¡Listo! Descarga tus archivos:")
-        cols = st.columns(len(plantillas))
-        
-        for i, p_nombre in enumerate(plantillas):
-            try:
-                doc = Document(p_nombre)
-                reemplazar_seguro(doc, datos_usuario)
-                
-                output = io.BytesIO()
-                doc.save(output)
-                output.seek(0)
-                
-                cols[i].download_button(
-                    label=f"📥 {p_nombre.upper()}",
-                    data=output,
-                    file_name=f"FINAL_{p_nombre}",
-                    use_container_width=True
-                )
-            except Exception as e:
-                st.error(f"Error en {p_nombre}: {e}")
+        # 3. Fase de Generación y Descarga
+        if boton:
+            st.success("✅ ¡Archivos generados correctamente!")
+            st.subheader("Descargas:")
+            
+            # Usamos columnas para los botones de descarga
+            cols_descarga = st.columns(len(archivos_subidos))
+
+            for idx, archivo_orig in enumerate(archivos_subidos):
+                try:
+                    # Rebobinamos el archivo original antes de procesarlo de nuevo
+                    archivo_orig.seek(0)
+                    doc_final = Document(archivo_orig)
+                    
+                    # Aplicar reemplazos
+                    reemplazar_seguro = reemplazar_texto(doc_final, datos_usuario)
+                    
+                    # Guardar en memoria (buffer)
+                    buffer_salida = io.BytesIO()
+                    doc_final.save(buffer_salida)
+                    buffer_salida.seek(0)
+                    
+                    nombre_descarga = f"FINAL_{archivo_orig.name}"
+                    
+                    # Botón de descarga
+                    cols_descarga[idx].download_button(
+                        label=f"📥 {archivo_orig.name}",
+                        data=buffer_salida,
+                        file_name=nombre_descarga,
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        key=f"btn_{idx}"
+                    )
+                except Exception as e:
+                    st.error(f"Error procesando {archivo_orig.name}: {e}")
+
+    else:
+        st.info("No se detectaron etiquetas `{{variable}}` en los archivos subidos. Revisa el formato.")
+
 else:
-    st.warning("No se detectaron etiquetas. Verifica tus archivos.")
+    st.info("Esperando archivos... Por favor sube tus plantillas .docx")
