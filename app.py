@@ -8,7 +8,6 @@ import os
 st.set_page_config(page_title="Certificador Pro", layout="centered")
 
 # --- CONFIGURACIÓN DE ARCHIVOS FIJOS ---
-# Aquí definimos los nombres de tus plantillas que ya deben estar en la carpeta
 PLANTILLAS_CONFIG = [
     "certificacion.docx",
     "anexo.docx"
@@ -67,7 +66,7 @@ archivos_presentes = [p for p in PLANTILLAS_CONFIG if os.path.exists(p)]
 
 if not archivos_presentes:
     st.error("❌ No se encontraron las plantillas .docx en el servidor.")
-    st.write("Asegúrate de que 'certificacion.docx' y 'anexo.docx' estén en la misma carpeta.")
+    st.write("Asegúrate de que 'certificacion.docx' y 'anexo.docx' estén en la misma carpeta que app.py.")
 else:
     # Extraer etiquetas de los archivos locales automáticamente
     lista_unica = extraer_etiquetas_fijas(archivos_presentes)
@@ -77,17 +76,16 @@ else:
         with st.form("datos_ingreso"):
             datos_usuario = {}
             for etiqueta in lista_unica:
-                # Formatear el nombre para que se vea limpio
                 label = etiqueta.replace("_", " ").upper()
                 datos_usuario[etiqueta] = st.text_input(label, placeholder=f"Escribe {label.lower()}...")
             
             st.write("---")
             boton_generar = st.form_submit_button("🚀 GENERAR DOCUMENTOS", use_container_width=True)
 
+        # La lógica de generación debe estar al mismo nivel de indentación que el 'with st.form'
         if boton_generar:
             st.success("✨ Documentos listos para descargar:")
             
-            # Mostrar un botón de descarga grande por cada archivo
             for p_nombre in archivos_presentes:
                 try:
                     archivo_final = generar_documento(p_nombre, datos_usuario)
@@ -97,15 +95,9 @@ else:
                         data=archivo_final,
                         file_name=f"LISTO_{p_nombre}",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                        use_container_width=True # Botón ancho fácil de presionar en móvil
+                        use_container_width=True
                     )
                 except Exception as e:
                     st.error(f"Error al procesar {p_nombre}: {e}")
     else:
         st.warning("No se encontraron etiquetas {{...}} en las plantillas.")
-
-    else:
-        st.info("No se detectaron etiquetas `{{variable}}` en los archivos subidos. Revisa el formato.")
-
-else:
-    st.info("Esperando archivos... Por favor sube tus plantillas .docx")
