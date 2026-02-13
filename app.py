@@ -49,8 +49,13 @@ def aplicar_estilo_y_reemplazo(paragraph, datos):
             run.font.size = Pt(8)
         return
 
-    # Lista de etiquetas que deben ir en negrita
-    tags_negrita = ["dirigido_a_la_institucion", "nombre", "cedula"]
+    # Lista de etiquetas que deben ir en negrita (actualizada)
+    tags_negrita = [
+        "dirigido_a_la_institucion", 
+        "nombre", 
+        "cedula", 
+        "actividad_economica_del_cliente"
+    ]
     
     # Expresión regular para encontrar las etiquetas
     parts = re.split(r'(\{\{.*?\}\})', texto_original)
@@ -139,5 +144,3 @@ else:
                     )
                 except Exception as e:
                     st.error(f"Error al procesar {p_nombre}: {e}")
-    else:
-        st.warning("No se encontraron etiquetas {{...}} en las plantillas.")
