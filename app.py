@@ -106,9 +106,9 @@ def generar_documento(nombre_plantilla, datos):
     return output
 
 # --- INTERFAZ ---
-st.title("📄 GENERADOR RÁPIDO")
-st.subheader("Certificación de Ingresos")
-st.info("📱 Ideal para uso desde el celular. Llena los datos abajo.")
+st.title("📄 GENERADOR DE DOCUMENTOS")
+st.subheader("Certificación de Ingresos📃")
+st.info("📄✍️ Lcdo.Jesus Portillo.")
 
 # Verificar si existen los archivos antes de empezar
 archivos_presentes = [p for p in PLANTILLAS_CONFIG if os.path.exists(p)]
@@ -131,8 +131,8 @@ else:
             st.write("---")
             boton_generar = st.form_submit_button("🚀 GENERAR DOCUMENTOS", use_container_width=True)
 
-        if boton_generar:
-            st.success("✨ Documentos listos para descargar:")
+        if boton_generar certificacion:
+            st.success("✨ Documentos listos para descargar📃:")
             
             for p_nombre in archivos_presentes:
                 try:
